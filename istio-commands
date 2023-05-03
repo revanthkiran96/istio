@@ -1,0 +1,155 @@
+cat k8s/istio/gateway/app/istio.yaml
+
+kubectl create namespace go-demo-7
+
+kubectl label namespace go-demo-7 istio-injection=enabled
+
+kubectl --namespace go-demo-7 apply --filename k8s/istio/gateway --recursive
+
+kubectl --namespace go-demo-7 rollout status deployment go-demo-7-primary
+
+kubectl --namespace go-demo-7 get pods
+
+kubectl --namespace go-demo-7 get virtualservices
+
+kubectl --namespace go-demo-7 describe virtualservice go-demo-7
+
+kubectl run curl --image alpine -it --rm -- sh -c "apk add -U curl && curl go-demo-7.go-demo-7/demo/hello"
+
+kubectl --namespace go-demo-7 get ingress
+
+kubectl --namespace go-demo-7 get gateways
+
+kubectl --namespace go-demo-7 describe gateway go-demo-7
+
+# If minikube
+export INGRESS_PORT=$(kubectl \
+    --namespace istio-system \
+    get service istio-ingressgateway \
+    --output jsonpath='{.spec.ports[?(@.name=="http2")].nodePort}')
+
+# If minikube
+export INGRESS_HOST=$(minikube ip):$INGRESS_PORT
+
+# If EKS
+export INGRESS_HOST=$(kubectl \
+    --namespace istio-system \
+    get service istio-ingressgateway \
+    --output jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+
+echo $INGRESS_HOST
+
+curl -v -H "Host: go-demo-7.acme.com" "http://$INGRESS_HOST/demo/hello"
+
+curl -v -H "Host: something-else.acme.com" "http://$INGRESS_HOST/demo/hello"
+
+kubectl --namespace go-demo-7 delete --filename k8s/istio/gateway --recursive
+
+################
+# Fist Release #
+################
+
+
+for i in {1..10}; do 
+    curl -H "Host: go-demo-7.acme.com" \
+        "http://$INGRESS_HOST/version"
+done
+
+
+# New Release #
+###############
+
+cat istio/split/exercise/app-0-0-2-canary.yaml
+
+diff istio/gateway/app/deployment.yaml istio/split/exercise/app-0-0-2-canary.yaml
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/app-0-0-2-canary.yaml
+
+kubectl --namespace go-demo-7 rollout status deployment go-demo-7-canary
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" \
+        "http://$INGRESS_HOST/version"
+done
+
+kubectl --namespace go-demo-7 get deployments
+
+kubectl --namespace go-demo-7 describe service go-demo-7
+
+kubectl --namespace go-demo-7 describe virtualservice go-demo-7
+
+kubectl --namespace go-demo-7 describe gateway go-demo-7
+
+#####################
+# Splitting Traffic #
+#####################
+
+cat istio/split/exercise/host20.yaml
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/host20.yaml
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" \
+        "http://$INGRESS_HOST/version"
+done
+
+kubectl --namespace go-demo-7 delete --filename istio/split/exercise/host20.yaml
+
+cat istio/split/exercise/split20.yaml
+
+# NOTE: The sum of all `weight` entries must be 100
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/split20.yaml
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" \
+        "http://$INGRESS_HOST/version"
+done
+
+###################
+# Rolling Forward #
+###################
+
+cat istio/split/exercise/split40.yaml
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/split40.yaml
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" "http://$INGRESS_HOST/version"
+done
+
+cat istio/split/exercise/split60.yaml
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/split60.yaml
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" "http://$INGRESS_HOST/version"
+done
+
+############################
+# Finishing The Deployment #
+############################
+
+cat istio/split/exercise/app-0-0-2.yaml
+
+diff istio/gateway/app/deployment.yaml istio/split/exercise/app-0-0-2.yaml
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/app-0-0-2.yaml
+
+kubectl --namespace go-demo-7 rollout status deployment go-demo-7-primary
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" \
+        "http://$INGRESS_HOST/version"
+done
+
+cat istio/split/exercise/split100.yaml
+
+kubectl --namespace go-demo-7 apply --filename istio/split/exercise/split100.yaml
+
+for i in {1..100}; do 
+    curl -H "Host: go-demo-7.acme.com" \
+        "http://$INGRESS_HOST/version"
+done
+
+kubectl --namespace go-demo-7 get deployments
